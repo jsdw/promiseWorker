@@ -5,45 +5,45 @@ window.promiseWorker = (function(){
 
 	var RESOLVE = 1, REJECT = 2, NOTIFY = 3, LOG = 4, ERROR = 5;
 
-	var ONCE_BEFORE =
-		[ "var worker = self;"
-		, "var RESOLVE = 1, REJECT = 2, NOTIFY = 3, LOG = 4, ERROR = 5;"
-		, "var notify = function(out){"
-		, "    worker.postMessage({ state: NOTIFY, result: out })"
-		, "};"
-		, "var console = {"
-		, "    log: function(){"
-		, "        worker.postMessage({ state: LOG, result: Array.prototype.slice.call(arguments) })"
-		, "    },"
-		, "    error: function(){"
-		, "        worker.postMessage({ state: ERROR, result: Array.prototype.slice.call(arguments) })"
-		, "    }"
-		, "};"
-		, "worker.onmessage = function(ev){"
-		, "    var msg = ev.data;"
-		, "    var resolve, reject"
-		, "    var p = new Promise(function(_resolve, _reject){"
-		, "        resolve = _resolve;"
-		, "        reject = _reject;"
-		, "    });"
-		, "    p.then("
-		, "        function(res){ worker.postMessage({ state: RESOLVE, result: res}); worker.close() },"
-		, "        function(err){ worker.postMessage({ state: REJECT, result: err}); worker.close() }"
-		, "    );"
-		, "    var res = (" //INSERT FN HERE //
-		].join("\n");
-
-	var ONCE_AFTER =
-		[ "    ).call(null,msg);"
-		, "    resolve(res);"
-		, "};"
-		].join("\n");
+	function makeFunc(fn){
+		return [
+			  "var worker = self;"
+			, "var _RESOLVE = 1, _REJECT = 2, _NOTIFY = 3, _LOG = 4, _ERROR = 5;"
+			, "var notify = function(out){"
+			, "    worker.postMessage({ state: _NOTIFY, result: out })"
+			, "};"
+			, "var console = {"
+			, "    log: function(){"
+			, "        worker.postMessage({ state: _LOG, result: Array.prototype.slice.call(arguments) })"
+			, "    },"
+			, "    error: function(){"
+			, "        worker.postMessage({ state: _ERROR, result: Array.prototype.slice.call(arguments) })"
+			, "    }"
+			, "};"
+			, "var myFunc = (function(){"
+			, "    var worker = null, self = null;" //hide globals from provided func.
+			, "    return " + fn.toString() + ";"
+			, "}());"
+			, "worker.onmessage = function(ev){"
+			, "    var msg = ev.data;"
+			, "    var resolve"
+			, "    var p = new Promise(function(_resolve){"
+			, "        resolve = _resolve;"
+			, "    });"
+			, "    p.then("
+			, "        function(res){ worker.postMessage({ state: _RESOLVE, result: res}); worker.close() },"
+			, "        function(err){ worker.postMessage({ state: _REJECT, result: err}); worker.close() }"
+			, "    );"
+			, "    resolve( myFunc.call({ notify: notify }, msg) );"
+			, "};"
+			].join("\n");
+	}
 
 	return {
 
 		create: function(fn){
 
-			var fnString = ONCE_BEFORE + fn.toString() + ONCE_AFTER;
+			var fnString = makeFunc(fn);
 			var blob = new Blob([fnString], { type: 'application/javascript' });
 			var url = URL.createObjectURL(blob);
 
@@ -107,7 +107,10 @@ window.promiseWorker = (function(){
 					return p;
 				}
 
-				w.postMessage(input);
+				//delay post to next frame so we are certain any
+				//chains of this and notify are evaluated before worker
+				//runs:
+				setTimeout(function(){ w.postMessage(input); },0);
 				return wrapPromise(p);
 
 			};
