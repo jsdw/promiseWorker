@@ -18,7 +18,9 @@ You can also return promises inside the worker function eg:
 
 ```
 var w = promiseWorker.create(function(input){
-    return new Promise(function(res){ res(input + 2) });
+    return new Promise(function(res){
+        setTimeout(function(){ res(input + 2) }, 5000);
+    });
 });
 
 w(3).then(function(res){ /* res == 5 */ });
@@ -48,12 +50,13 @@ w().catch(function(err){ /* err.message == WORKER_TERMINATED */ }).terminate();
 
 Workers can also send notifications to the outside thread as often as they like,
 which uses postMessage and structured cloning under the hood. One can unsubscribe
-from notifications by running the callback provided back.
+from notifications by running the callback provided back. You can use this.notify to
+avoid JShint warnings if you prefer:
 
 ```
 var w = promiseWorker.create(function(input){
     notify("first message");
-    notify("second message");
+    this.notify("second message");
 });
 
 var unsub = w().notify(function(msg){ /* received "first message" then "second message" */ });
